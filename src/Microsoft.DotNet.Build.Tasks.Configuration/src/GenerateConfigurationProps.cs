@@ -60,7 +60,7 @@ namespace Microsoft.DotNet.Build.Tasks.Configuration
 
             var projectPath = Path.Combine(PropsFolder, $"{PropsFileName}{PropsFileExtension}");
             project.TreatAsLocalProperty = string.Join<string>(";", ConfigurationFactory.GetProperties().Select(pi => pi.Name));
-            project.Save(projectPath);
+            project.SaveIfChanged(Log);
 
             return !Log.HasLoggedErrors;
         }
@@ -159,7 +159,7 @@ namespace Microsoft.DotNet.Build.Tasks.Configuration
         /// </summary>
         private void CreateBuildConfigurationPropsFile(string fileName)
         {
-            var buildConfigurationProps = ProjectRootElement.Create();
+            var buildConfigurationProps = ProjectRootElement.Create(Path.Combine(PropsFolder, fileName));
 
             // pull apart BuildConfiguration, but don't set any derived properties
             // we do this even when Configuration is already set because we want to
@@ -204,7 +204,7 @@ namespace Microsoft.DotNet.Build.Tasks.Configuration
                 CreateBuildConfigurationPropsFile(buildConfiguration);
             }
 
-            buildConfigurationProps.Save(Path.Combine(PropsFolder, fileName));
+            buildConfigurationProps.SaveIfChanged(Log);
         }
 
         /// <summary>
@@ -264,7 +264,7 @@ namespace Microsoft.DotNet.Build.Tasks.Configuration
             foreach (var configurationString in buildConfiguration.GetSignificantConfigurationStrings())
             {
                 var configurationProjectPath = Path.Combine(PropsFolder, $"{ConfigurationPropsPrefix}.{configurationString}{PropsFileExtension}");
-                configurationSpecificProps.Save(configurationProjectPath);
+                configurationSpecificProps.SaveIfChanged(Log);
             }
         }
 
@@ -334,6 +334,40 @@ namespace Microsoft.DotNet.Build.Tasks.Configuration
             }
 
             return condition.ToString();
+        }
+    }
+
+    internal static class ProjectRootElementExtensions
+    {
+        internal static void SaveIfChanged(this ProjectRootElement candidate, Log log)
+        {
+            if (!File.Exists(candidate.FullPath))
+                return;
+
+            ProjectRootElement existing;
+            try
+            {
+                existing = ProjectRootElement.Open(candidate.FullPath);
+            }
+            catch
+            {
+                return;
+            }
+
+            var sw0 = new StringWriter();
+            var sw1 = new StringWriter();
+            existing.Save(sw0);
+            candidate.Save(sw1);
+
+            if (sw0.GetStringBuilder() == sw1.GetStringBuilder())
+            {
+                log.LogMessage(LogImportance.Low, $"Skipped writing {candidate.FullPath} as it was already up-to-date");
+            }
+            else
+            {
+                candidate.Save();
+                log.LogMessage(LogImportance.Low, $"Updated {candidate.FullPath}");
+            }
         }
     }
 }
